@@ -118,7 +118,7 @@ def main():
     for i in range(need):
         si = (base + i) * GROUPS_PER_RUN    # 0,3,6,9... 不重叠(旧写法 i%N 会让相邻批次重叠 2 组)
         inputs = {"apply": "true", "limit_groups": str(GROUPS_PER_RUN), "budget_min": "340",
-                  "whisper_model": "large-v3-turbo", "start_index": str(si),
+                  "whisper_model": "large-v3", "start_index": str(si),
                   "batch_tag": "%s_%d_%d" % (PHASE, bt, i),
                   # 翻译阶段只出 srt; 烧录阶段只烧已有 srt
                   "burn_video": "true" if PHASE == "burn" else "false"}
