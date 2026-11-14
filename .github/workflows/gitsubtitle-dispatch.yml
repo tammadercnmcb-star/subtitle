@@ -25,8 +25,6 @@ permissions:
 env:
   GH_TOKEN: ${{ secrets.GITGH_TOKEN }}
   PATHS_JSON: ${{ secrets.GITPATHS_JSON }}
-  TG_TOKEN: ${{ secrets.GITTG_TOKEN }}
-  TG_CHAT_ID: ${{ secrets.GITTG_CHAT_ID }}
   # 本调度器只负责「翻译阶段」: 只出 srt, 不烧录(burn_video=false)
   # 烧录由 subtitle-burn.yml(PHASE=burn) 在翻译全部完成 + 质量校验通过后再跑
   PHASE: translate
