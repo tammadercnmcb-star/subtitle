@@ -3,7 +3,7 @@ name: subtitle-verify
 # 字幕质量校验(第二段的前置关卡): 扫描源目录所有 .srt, 逐条查
 #   日文残留 / 思考过程泄漏 / 空条目, 汇总成报告发 Telegram。
 # 手动跑一次即可确认"翻译没问题"; 烧录阶段(subtitle-burn)会自己再闸门一次。
-# Secrets: RCLONE_CONF / PATHS_JSON / TG_TOKEN / TG_CHAT_ID
+# Secrets: RCLONE_CONF / PATHS_JSON
 
 on:
   schedule:
