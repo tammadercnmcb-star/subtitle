@@ -21,7 +21,7 @@ on:
       max_bad_file_ratio:
         description: "闸门: 允许的'有问题 srt'占比"
         required: false
-        default: "0.02"
+        default: "0.01"
 
 concurrency:
   group: subtitle-burn
@@ -69,7 +69,7 @@ jobs:
             exit 0
           fi
           python3 gitverify_srt.py --gate \
-            --max-bad-file-ratio "${{ inputs.max_bad_file_ratio || '0.02' }}"
+            --max-bad-file-ratio "${{ inputs.max_bad_file_ratio || '0.01' }}"
 
       - name: 派发烧录批次(PHASE=burn)
         run: python3 gitsubtitle_dispatch.py
