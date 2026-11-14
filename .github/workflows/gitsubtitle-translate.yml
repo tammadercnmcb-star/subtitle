@@ -205,8 +205,6 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITGH_TOKEN }}
-          TG_TOKEN: ${{ secrets.GITTG_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.GITTG_CHAT_ID }}
         run: |
           # 随机错峰 0-25s, 避免多批同时收尾时一起 dispatch 造成重复补发
           sleep $((RANDOM % 25))
