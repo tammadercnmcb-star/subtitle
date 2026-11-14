@@ -84,11 +84,11 @@ permissions:
   contents: read
 
 env:
-  PATHS_JSON: ${{ secrets.PATHS_JSON }}
-  SUBTITLE_API_BASE: ${{ secrets.SUBTITLE_API_BASE }}
-  SUBTITLE_API_KEY: ${{ secrets.SUBTITLE_API_KEY }}
-  SUBTITLE_MODEL: ${{ secrets.SUBTITLE_MODEL }}
-  SUBTITLE_MODEL_FB: ${{ secrets.SUBTITLE_MODEL_FB }}
+  PATHS_JSON: ${{ secrets.GITGITPATHS_JSON }}
+  SUBTITLE_API_BASE: ${{ secrets.GITGITSUBTITLE_API_BASE }}
+  SUBTITLE_API_KEY: ${{ secrets.GITGITSUBTITLE_API_KEY }}
+  SUBTITLE_MODEL: ${{ secrets.GITGITSUBTITLE_MODEL }}
+  SUBTITLE_MODEL_FB: ${{ secrets.GITGITSUBTITLE_MODEL_FB }}
   # 速度旋钮(仓库 Variables 可改, 不改代码即可调优)
   BATCH_SIZE: ${{ vars.BATCH_SIZE || '50' }}          # 每请求字幕条数(旧: 10)
   XLATE_CONC: ${{ vars.XLATE_CONC || '4' }}           # 并发翻译请求数(旧: 1, 串行)
@@ -124,7 +124,7 @@ jobs:
 
       - name: 写 rclone 配置
         env:
-          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+          RCLONE_CONF: ${{ secrets.GITGITRCLONE_CONF }}
         run: |
           mkdir -p ~/.config/rclone
           printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
@@ -170,9 +170,9 @@ jobs:
           FIX_SRT: ${{ inputs.fix_srt || 'false' }}
           NO_REBURN: ${{ inputs.no_reburn || 'false' }}
           # 翻译附加规则: 优先手动输入, 否则用 Secret TRANSLATE_RULES(长期定制, 不进日志)
-          EXTRA_RULES: ${{ inputs.extra_rules || secrets.TRANSLATE_RULES || '' }}
+          EXTRA_RULES: ${{ inputs.extra_rules || secrets.GITGITTRANSLATE_RULES || '' }}
           # 术语对照表(JSON 文本): 走 Secret, 不落公开仓库
-          TRANSLATE_TERMS: ${{ secrets.TRANSLATE_TERMS || '' }}
+          TRANSLATE_TERMS: ${{ secrets.GITGITTRANSLATE_TERMS || '' }}
         run: |
           set -e
           # 定时触发(schedule)没有 inputs: 强制真跑一批(1组, large-v3-turbo, 硬字幕)
@@ -204,9 +204,9 @@ jobs:
         if: always()
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          GH_TOKEN: ${{ secrets.GITGITGH_TOKEN }}
+          TG_TOKEN: ${{ secrets.GITGITTG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.GITGITTG_CHAT_ID }}
         run: |
           # 随机错峰 0-25s, 避免多批同时收尾时一起 dispatch 造成重复补发
           sleep $((RANDOM % 25))
