@@ -31,13 +31,13 @@ permissions:
   contents: read
 
 env:
-  GH_TOKEN: ${{ secrets.GH_TOKEN }}
-  PATHS_JSON: ${{ secrets.PATHS_JSON }}
-  TG_TOKEN: ${{ secrets.TG_TOKEN }}
-  TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+  GH_TOKEN: ${{ secrets.GITGITGH_TOKEN }}
+  PATHS_JSON: ${{ secrets.GITGITPATHS_JSON }}
+  TG_TOKEN: ${{ secrets.GITGITTG_TOKEN }}
+  TG_CHAT_ID: ${{ secrets.GITGITTG_CHAT_ID }}
   PHASE: burn
-  TARGET_PARALLEL: ${{ vars.BURN_PARALLEL || '6' }}
-  GROUPS_PER_RUN: ${{ vars.GROUPS_PER_RUN || '3' }}
+  TARGET_PARALLEL: ${{ vars.GITBURN_PARALLEL || '6' }}
+  GROUPS_PER_RUN: ${{ vars.GITGROUPS_PER_RUN || '3' }}
 
 jobs:
   burn:
@@ -56,7 +56,7 @@ jobs:
 
       - name: 写 rclone 配置
         env:
-          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+          RCLONE_CONF: ${{ secrets.GITGITRCLONE_CONF }}
         run: |
           mkdir -p ~/.config/rclone
           printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
