@@ -97,10 +97,10 @@ def main():
                 created = time.mktime(time.strptime(recent[0]["created_at"], "%Y-%m-%dT%H:%M:%SZ"))
                 if time.time() - created < 6 * 3600:
                     if PHASE == "burn":
-                        sp.tg_send("🎬 硬字幕烧录全部完成!\n总组 %d | 字幕 %d | 硬字幕 %d" % (
+                        log("🎬 硬字幕烧录全部完成! 总组 %d | 字幕 %d | 硬字幕 %d" % (
                             stats["total_groups"], stats["srt"], stats["burn"]))
                     else:
-                        sp.tg_send("📝 字幕翻译全部完成(待烧录 %d 组)!\n总组 %d | 字幕 %d | 硬字幕 %d" % (
+                        log("📝 字幕翻译全部完成(待烧录 %d 组)! 总组 %d | 字幕 %d | 硬字幕 %d" % (
                             stats["srt_no_burn"], stats["total_groups"], stats["srt"], stats["burn"]))
                     log("已发完成通知")
             except Exception:
