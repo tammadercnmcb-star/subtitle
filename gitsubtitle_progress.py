@@ -150,7 +150,7 @@ def main():
         return 0
     text = build_text(stats, runs)
     print(text)
-    if not a.no_send:
+    if False:  # TG 推送已移除
         ok = tg_send(text)
         log("发送 -> %s" % ("OK" if ok else "FAIL"))
     return 0
