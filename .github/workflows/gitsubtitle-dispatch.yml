@@ -23,15 +23,15 @@ permissions:
   contents: read
 
 env:
-  GH_TOKEN: ${{ secrets.GH_TOKEN }}
-  PATHS_JSON: ${{ secrets.PATHS_JSON }}
-  TG_TOKEN: ${{ secrets.TG_TOKEN }}
-  TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+  GH_TOKEN: ${{ secrets.GITGITGH_TOKEN }}
+  PATHS_JSON: ${{ secrets.GITGITPATHS_JSON }}
+  TG_TOKEN: ${{ secrets.GITGITTG_TOKEN }}
+  TG_CHAT_ID: ${{ secrets.GITGITTG_CHAT_ID }}
   # 本调度器只负责「翻译阶段」: 只出 srt, 不烧录(burn_video=false)
   # 烧录由 subtitle-burn.yml(PHASE=burn) 在翻译全部完成 + 质量校验通过后再跑
   PHASE: translate
-  TARGET_PARALLEL: ${{ vars.TARGET_PARALLEL || '6' }}
-  GROUPS_PER_RUN: ${{ vars.GROUPS_PER_RUN || '3' }}
+  TARGET_PARALLEL: ${{ vars.GITTARGET_PARALLEL || '6' }}
+  GROUPS_PER_RUN: ${{ vars.GITGROUPS_PER_RUN || '3' }}
 
 jobs:
   dispatch:
@@ -50,7 +50,7 @@ jobs:
 
       - name: 写 rclone 配置
         env:
-          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+          RCLONE_CONF: ${{ secrets.GITGITRCLONE_CONF }}
         run: |
           mkdir -p ~/.config/rclone
           printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
