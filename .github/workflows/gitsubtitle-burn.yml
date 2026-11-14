@@ -6,7 +6,7 @@ name: subtitle-burn
 #   - 双重前置: ①翻译阶段必须彻底完成(所有组都有 srt, 由 subtitle_dispatch.py 把关)
 #              ②verify_srt.py 闸门必须通过(默认允许 <=2% 的 srt 文件有问题)
 # 想跳过闸门(慎用): 手动 trigger 时把 skip_verify 设 true。
-# Secrets: GH_TOKEN / RCLONE_CONF / PATHS_JSON / TG_TOKEN / TG_CHAT_ID
+# Secrets: GH_TOKEN / RCLONE_CONF / PATHS_JSON
 
 on:
   schedule:
