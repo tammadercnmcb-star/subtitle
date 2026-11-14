@@ -5,7 +5,7 @@ name: subtitle-dispatch
 #   - 待办=0 且近期无活动 -> 发一条"翻译全部完成"到 TG
 #   烧录阶段见 subtitle-burn.yml(PHASE=burn), 前置: 翻译全完成 + 质量校验通过。
 # 从此不依赖本机/会话在线 —— 全流程云上闭环。
-# Secrets: GH_TOKEN / RCLONE_CONF / PATHS_JSON / TG_TOKEN / TG_CHAT_ID
+# Secrets: GH_TOKEN / RCLONE_CONF / PATHS_JSON
 
 on:
   schedule:
