@@ -14,11 +14,11 @@ on:
       max_bad_file_ratio:
         description: "允许的'有问题的 srt 文件'占比上限(0.02 = 2%)"
         required: false
-        default: "0.02"
+        default: "0.01"
       max_bad_seg_ratio:
         description: "允许的'坏条目'占比上限(0.05 = 5%)"
         required: false
-        default: "0.05"
+        default: "0.01"
 
 concurrency:
   group: subtitle-verify
@@ -57,5 +57,5 @@ jobs:
       - name: 校验 srt 质量并发报告
         run: |
           python3 gitverify_srt.py --tg \
-            --max-bad-file-ratio "${{ inputs.max_bad_file_ratio || '0.02' }}" \
-            --max-bad-seg-ratio "${{ inputs.max_bad_seg_ratio || '0.05' }}"
+            --max-bad-file-ratio "${{ inputs.max_bad_file_ratio || '0.01' }}" \
+            --max-bad-seg-ratio "${{ inputs.max_bad_seg_ratio || '0.02' }}"
