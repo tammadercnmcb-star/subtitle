@@ -29,8 +29,6 @@ permissions:
 
 env:
   PATHS_JSON: ${{ secrets.GITPATHS_JSON }}
-  TG_TOKEN: ${{ secrets.GITTG_TOKEN }}
-  TG_CHAT_ID: ${{ secrets.GITTG_CHAT_ID }}
 
 jobs:
   verify:
@@ -56,6 +54,6 @@ jobs:
 
       - name: 校验 srt 质量并发报告
         run: |
-          python3 gitverify_srt.py --tg \
+          python3 gitverify_srt.py \
             --max-bad-file-ratio "${{ inputs.max_bad_file_ratio || '0.01' }}" \
             --max-bad-seg-ratio "${{ inputs.max_bad_seg_ratio || '0.01' }}"
