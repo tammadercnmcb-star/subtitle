@@ -20,10 +20,10 @@ permissions:
   contents: read
 
 env:
-  PATHS_JSON: ${{ secrets.PATHS_JSON }}
-  TG_TOKEN: ${{ secrets.TG_TOKEN }}
-  TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-  GH_TOKEN: ${{ secrets.GH_TOKEN }}
+  PATHS_JSON: ${{ secrets.GITGITPATHS_JSON }}
+  TG_TOKEN: ${{ secrets.GITGITTG_TOKEN }}
+  TG_CHAT_ID: ${{ secrets.GITGITTG_CHAT_ID }}
+  GH_TOKEN: ${{ secrets.GITGITGH_TOKEN }}
 
 jobs:
   report:
@@ -42,7 +42,7 @@ jobs:
 
       - name: 写 rclone 配置
         env:
-          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+          RCLONE_CONF: ${{ secrets.GITGITRCLONE_CONF }}
         run: |
           mkdir -p ~/.config/rclone
           printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
