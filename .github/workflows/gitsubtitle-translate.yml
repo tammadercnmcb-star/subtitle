@@ -1,7 +1,7 @@
 name: subtitle-translate
 
 # 日文语音视频 → 中文 SRT 字幕(纯云端)
-#   分片按「番号」归组 → ffmpeg 拼整片 → faster-whisper(large-v3-turbo) 日文转写
+#   分片按「番号」归组 → ffmpeg 拼整片 → faster-whisper(large-v3) 日文转写
 #   → OpenAI 兼容网关批量翻译(简体中文, 保时间轴) → 同名 .srt 上传回源目录
 #
 # 公开仓库: 日志全部脱敏(logmask), 真实盘名/目录名/番号/链接均不出现明文。
@@ -35,7 +35,7 @@ on:
         required: false
         default: "300"
       whisper_model:
-        description: "whisper 模型(large-v3-turbo / turbo / large-v3 / medium / small); 默认 large-v3-turbo"
+        description: "whisper 模型(large-v3-turbo / turbo / large-v3 / medium / small); 默认 large-v3"
         required: false
         default: "large-v3"
       probe_only:
@@ -175,7 +175,7 @@ jobs:
           TRANSLATE_TERMS: ${{ secrets.GITGITTRANSLATE_TERMS || '' }}
         run: |
           set -e
-          # 定时触发(schedule)没有 inputs: 强制真跑一批(1组, large-v3-turbo, 硬字幕)
+          # 定时触发(schedule)没有 inputs: 强制真跑一批(1组, large-v3, 硬字幕)
           if [ "$EVENT_NAME" = "schedule" ]; then
             APPLY="true"; LIMIT_GROUPS="3"; WHISPER_MODEL="large-v3"; START_INDEX="0"
             BURN_VIDEO="true"; ONLY=""
