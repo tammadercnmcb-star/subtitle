@@ -33,8 +33,6 @@ permissions:
 env:
   GH_TOKEN: ${{ secrets.GITGH_TOKEN }}
   PATHS_JSON: ${{ secrets.GITPATHS_JSON }}
-  TG_TOKEN: ${{ secrets.GITTG_TOKEN }}
-  TG_CHAT_ID: ${{ secrets.GITTG_CHAT_ID }}
   PHASE: burn
   TARGET_PARALLEL: ${{ vars.GITBURN_PARALLEL || '6' }}
   GROUPS_PER_RUN: ${{ vars.GITGROUPS_PER_RUN || '3' }}
