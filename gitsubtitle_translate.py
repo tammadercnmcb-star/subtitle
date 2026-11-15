@@ -581,6 +581,55 @@ def parse_srt(path):
     return segs
 
 
+# ---------------- 按分片切分 srt(每个视频文件一个同名 srt) ----------------
+def ffprobe_duration(path):
+    """视频时长(秒); 失败返回 None"""
+    rc, out, err = run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                        "-of", "csv=p=0", path])
+    try:
+        return float(out.strip().splitlines()[0])
+    except Exception:
+        return None
+
+
+def group_srt_done(existing, parts):
+    """组完成 = 每个视频分片都有同名 .srt(按分片命名, 播放器自动挂字幕)"""
+    return all((fn + ".srt") in existing for _i, fn in parts)
+
+
+def split_srt_parts(zh, local_parts, raw_names, out_dir):
+    """按分片时长把合并时间轴切成每片一份 srt, 时间基归零。
+    返回 [(raw_video_name, srt_path)]; 某片时长探测失败则该片及其后都不出(偏移未知)。"""
+    durs = []
+    for p in local_parts:
+        d = ffprobe_duration(p)
+        if not d or d <= 0:
+            log("!! ffprobe 时长失败: %s" % os.path.basename(p))
+            durs.append(None)
+        else:
+            durs.append(d)
+    res = []
+    cum = 0.0
+    unknown = False
+    for i, p in enumerate(local_parts):
+        raw = raw_names[i]
+        d = durs[i]
+        if unknown:
+            log("!! 分片 %s 之前的时长缺失, 跳过该片" % raw)
+            continue
+        if not d:
+            unknown = True
+            continue
+        segs = [(st - cum, en - cum, tx) for st, en, tx in zh
+                if st >= cum - 0.001 and st < cum + d - 0.001]
+        segs = [(max(0.0, a), max(0.0, b), tx) for a, b, tx in segs]
+        outp = os.path.join(out_dir, "part_%d.srt" % i)
+        write_srt(segs, outp)
+        res.append((raw, outp))
+        cum += d
+    return res
+
+
 # ---------------- 硬字幕烧制 ----------------
 BURN_VIDEO = os.environ.get("BURN_VIDEO", "1").strip() not in ("0", "false", "no", "off")
 BURN_DIR = os.environ.get("BURN_DIR", "字幕版")   # 输出子目录(相对源目录)
@@ -716,22 +765,22 @@ def process_group(remote, path, base, parts, workdir, apply, probe_seconds=0, bu
         log("!! 无字幕段, 跳过")
         return
     zh = translate_segments(segs)
-    srt_local = os.path.join(gdir, "out.srt")
-    write_srt(zh, srt_local)
-    srt_name = "%s.srt" % base
-    rc, out, err = run(["rclone", "copyto", srt_local, "%s:%s/%s" % (remote, path, srt_name),
-                        "--retries", "3"])
-    log("上传 srt -> rc=%d (%.1fs)" % (rc, time.time() - t0))
-    if rc != 0:
-        log("!! 上传失败: %s" % err[:200])
-    # 硬字幕(可选): 把 srt 烧进整片, 上传到 字幕版/ 子目录
-    if BURN_VIDEO:
-        try:
-            burn_subtitles(video, srt_local, base, remote, path, gdir)
-        except Exception as e:
-            log("!! 硬字幕步骤异常: %s" % str(e)[:200])
+    # 按分片切分时间轴: 每个视频文件一个同名 srt(播放器打开视频直接挂字幕)
+    pieces = split_srt_parts(zh, local_parts, [fn for _i, fn in parts], gdir)
+    if not pieces:
+        log("!! 分片 srt 切分失败, 不上传")
+    else:
+        ok_n = 0
+        for raw, srt_path in pieces:
+            rc, out, err = run(["rclone", "copyto", srt_path, "%s:%s/%s.srt" % (remote, path, raw),
+                                "--retries", "3"])
+            if rc == 0:
+                ok_n += 1
+            else:
+                log("!! 上传失败 %s: %s" % (raw, err[:120]))
+        log("上传分片 srt %d/%d -> (%.1fs)" % (ok_n, len(pieces), time.time() - t0))
     # 清理
-    for p in local_parts + [video, srt_local]:
+    for p in local_parts + [video]:
         try:
             os.remove(p)
         except Exception:
@@ -808,12 +857,12 @@ def main():
     else:
         targets = []
         for base in order_by_size:
-            if base in existing and not a.force:
+            if group_srt_done(existing, groups[base]) and not a.force:
                 continue
             if a.only and base != a.only:
                 continue
             targets.append(base)
-        log("待处理组=%d (已跳过 %d 个已有srt; 按大小升序)" % (len(targets), len(existing)))
+        log("待处理组=%d/%d (组完成=每个分片有同名srt; 按大小升序)" % (len(targets), len(groups)))
 
     if a.list:
         for b in targets:
