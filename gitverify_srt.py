@@ -35,6 +35,8 @@ logmask.install()
 
 SRC_REMOTE = os.environ.get("SUB_SRC") or pathcfg.get("SUB_SRC", "")
 SRC_DIR = os.environ.get("SUB_DIR") or pathcfg.get("SUB_DIR", "out4")
+# 输出模式: ja = 日语 srt(假名是正常的, 不判坏); zh = 中文 srt(假名=残留)
+LANG_MODE = (os.environ.get("LANG_MODE") or pathcfg.get("LANG_MODE", "ja")).strip().lower()
 
 _KANA = re.compile(r"[\u3040-\u309f\u30a0-\u30ff]")
 _LEAK = ("the user", "i need", "i should", "let me", "translate", "translation",
@@ -71,7 +73,7 @@ def bad_reason(text):
     t = (text or "").strip()
     if not t:
         return "空"
-    if _KANA.search(t):
+    if LANG_MODE != "ja" and _KANA.search(t):
         return "日文残留"
     low = t.lower()
     for w in _LEAK:
