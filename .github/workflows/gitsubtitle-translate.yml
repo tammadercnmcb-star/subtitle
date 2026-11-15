@@ -85,6 +85,7 @@ permissions:
 
 env:
   PATHS_JSON: ${{ secrets.GITPATHS_JSON }}
+  LANG_MODE: ${{ vars.LANG_MODE || 'ja' }}
   SUBTITLE_API_BASE: ${{ secrets.GITSUBTITLE_API_BASE }}
   SUBTITLE_API_KEY: ${{ secrets.GITSUBTITLE_API_KEY }}
   SUBTITLE_MODEL: ${{ secrets.GITSUBTITLE_MODEL }}
