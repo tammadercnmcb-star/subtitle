@@ -92,8 +92,9 @@ def collect():
         m = _RE_PART.search(fn) or _RE_PLAIN.search(fn)
         if m:
             parts.setdefault(_norm_base(m.group("base")), []).append(fn)
-    # 组完成 = 每个视频分片都有同名 srt(按分片命名)
-    done = sum(1 for ps in parts.values() if all((p + ".srt") in srt for p in ps))
+    # 组完成 = 每个视频分片都有同名 srt(<视频名去扩展名>.srt)
+    done = sum(1 for ps in parts.values()
+               if all((os.path.splitext(p)[0] + ".srt") in srt for p in ps))
     burn = set()
     try:
         for fn in rclone_files(SRC_REMOTE, "%s/%s" % (SRC_DIR, BURN_DIR)):
