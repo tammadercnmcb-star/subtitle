@@ -306,6 +306,33 @@ def alist_put(remote_path, local_file, size, label=None):
 
 
 # ---------------- rclone ----------------
+def _put_with_guard(remote_path, local_file, size, label=None):
+    """alist_put 的守卫版: 单文件超时 + 卡死重试一次 + 仍卡死则跳过。
+    139 个人云偶发上传僵死(实测 21 分钟 0 速率), 不能让整轮备份卡住。"""
+    budget = int(os.environ.get("GY_PUT_TIMEOUT_SEC", "1200"))
+    for attempt in (1, 2):
+        t0 = time.time()
+        res = {"ok": False}
+
+        def _work():
+            try:
+                res["ok"] = bool(alist_put(remote_path, local_file, size, label))
+            except Exception as e:
+                log("   上传异常: %s" % str(e)[:120])
+
+        th = threading.Thread(target=_work, daemon=True)
+        th.start()
+        th.join(budget)
+        if th.is_alive():
+            log("   !! 上传卡死(>%ds), 第 %d 次%s" % (budget, attempt,
+                ", 重试" if attempt == 1 else ", 放弃该文件(下轮再来)"))
+            continue
+        if res["ok"]:
+            return True
+        log("   上传失败(第 %d 次, %.0fs)" % (attempt, time.time() - t0))
+    return False
+
+
 def rclone(args, timeout=7200):
     env = dict(os.environ)
     return subprocess.run([RCLONE] + list(args) + ["--config", CONF], capture_output=True,
