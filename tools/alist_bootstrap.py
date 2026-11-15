@@ -218,6 +218,10 @@ def main():
 
 
 if __name__ == "__main__":
-    import logmask          # 日志脱敏: 文件名/路径 -> 短哈希(见 logmask.py)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    import gitlogmask as logmask
     logmask.install()
+except Exception:
+    pass
     sys.exit(main())
