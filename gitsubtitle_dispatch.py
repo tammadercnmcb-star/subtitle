@@ -35,7 +35,7 @@ REPO = "tammadercnmcb-star/subtitle"
 WF = "gitsubtitle-translate.yml"
 TARGET_PARALLEL = int(os.environ.get("TARGET_PARALLEL", "20"))   # 并发批次(仓库 Variables 可调)
 GROUPS_PER_RUN = int(os.environ.get("GROUPS_PER_RUN", "3"))     # 每批次处理几组
-PHASE = (os.environ.get("PHASE") or "translate").strip().lower()  # translate | burn
+PHASE = "translate"  # 烧录阶段已移除, 固定 translate
 
 
 def log(m):
@@ -121,7 +121,7 @@ def main():
                   "whisper_model": "large-v3", "start_index": str(si),
                   "batch_tag": "%s_%d_%d" % (PHASE, bt, i),
                   # 翻译阶段只出 srt; 烧录阶段只烧已有 srt
-                  "burn_video": "true" if PHASE == "burn" else "false"}
+                  "burn_video": "false"}
         if PHASE == "burn":
             inputs["burn_only"] = "true"
         st, dd = gh_req("POST", "/repos/%s/actions/workflows/%s/dispatches" % (REPO, WF), tok,
