@@ -35,7 +35,9 @@ REPO = "tammadercnmcb-star/subtitle"
 WF = "gitsubtitle-translate.yml"
 TARGET_PARALLEL = int(os.environ.get("TARGET_PARALLEL", "20"))   # 并发批次(仓库 Variables 可调)
 GROUPS_PER_RUN = int(os.environ.get("GROUPS_PER_RUN", "3"))     # 每批次处理几组
-PHASE = "translate"  # 烧录阶段已移除, 固定 translate`n# 自接力模式: 每个 translate 批次结束时调用本脚本, 每次最多补 1 批(避免指数级联) RELAY = (os.environ.get("RELAY") or "").strip() == "1"
+PHASE = "translate"  # 烧录阶段已移除, 固定 translate
+# 自接力模式: 每个 translate 批次结束时调用本脚本, 每次最多补 1 批(避免指数级联)
+RELAY = (os.environ.get("RELAY") or `"`).strip() == "1"
 
 
 def log(m):
