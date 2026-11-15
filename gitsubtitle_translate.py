@@ -59,6 +59,8 @@ def cfg(key, default=""):
 
 SRC_REMOTE = cfg("SUB_SRC", "")
 SRC_DIR = cfg("SUB_DIR", "out4")
+# 输出模式: ja = 只出日语 srt(纯转写, 不翻译, 不依赖网关); zh = 日译中
+LANG_MODE = (cfg("LANG_MODE", "ja") or "ja").strip().lower()
 API_BASE = os.environ.get("SUBTITLE_API_BASE", "").rstrip("/")
 API_KEY = os.environ.get("SUBTITLE_API_KEY", "")
 MODEL = os.environ.get("SUBTITLE_MODEL", "glm-5.3")
@@ -797,20 +799,35 @@ def process_group(remote, path, base, parts, workdir, apply, probe_seconds=0, bu
     if not segs:
         log("!! 无字幕段, 跳过")
         return
-    zh = translate_segments(segs)
-    # 上传前质量门: 坏译文(日文残留/泄漏/拒译话术)超阈值就不上传
-    # —— 组没有 srt 会被当作未完成, 下轮自动重跑; 宁缺勿滥
-    bad = [t for _s, _e, t in zh if _is_bad_translation(t)]
-    ratio = (len(bad) / float(len(zh))) if zh else 1.0
-    if ratio > MAX_BAD_RATIO:
-        log("!! 组不合格: 坏译文 %d/%d (%.1f%% > %.1f%%), 不上传, 等下次重跑"
-            % (len(bad), len(zh), ratio * 100, MAX_BAD_RATIO * 100))
-        for p in local_parts + [video]:
-            try:
-                os.remove(p)
-            except Exception:
-                pass
-        return
+    if LANG_MODE == "ja":
+        # 纯转写模式: 日语原文直出, 不调网关(无 429/拒译问题)
+        zh = [(st, en, tx) for st, en, tx in segs]
+        bad = [t for _s, _e, t in zh if not (t or "").strip()]
+        log("日语模式: 跳过翻译, 直出转写 %d 条(空条 %d)" % (len(zh), len(bad)))
+        ratio = (len(bad) / float(len(zh))) if zh else 1.0
+        if ratio > MAX_BAD_RATIO:
+            log("!! 组不合格: 空条 %d/%d, 不上传, 等下次重跑" % (len(bad), len(zh)))
+            for p in local_parts + [video]:
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+            return
+    else:
+        zh = translate_segments(segs)
+        # 上传前质量门: 坏译文(日文残留/泄漏/拒译话术)超阈值就不上传
+        # —— 组没有 srt 会被当作未完成, 下轮自动重跑; 宁缺勿滥
+        bad = [t for _s, _e, t in zh if _is_bad_translation(t)]
+        ratio = (len(bad) / float(len(zh))) if zh else 1.0
+        if ratio > MAX_BAD_RATIO:
+            log("!! 组不合格: 坏译文 %d/%d (%.1f%% > %.1f%%), 不上传, 等下次重跑"
+                % (len(bad), len(zh), ratio * 100, MAX_BAD_RATIO * 100))
+            for p in local_parts + [video]:
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+            return
     # 按分片切分时间轴: 每个视频文件一个同名 srt(播放器打开视频直接挂字幕)
     pieces = split_srt_parts(zh, local_parts, [fn for _i, fn in parts], gdir)
     if not pieces:
