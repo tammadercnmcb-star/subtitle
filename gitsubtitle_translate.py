@@ -230,6 +230,21 @@ def concat_parts(local_parts, outpath):
 
 
 # ---------------- ASR ----------------
+# whisper 在喘息/呻吟/重复喊叫段会循环输出同一短语("ほらほらほら…×30"),
+# 既污染字幕又让模型拒译 → 转写结果先做重复折叠。
+_RE_REPEAT = re.compile(r"(.{2,10}?)\1{4,}")
+
+
+def _collapse_repeats(txt):
+    """同短语重复 >=5 次压成 2 次 + …(循环到稳定)"""
+    prev = None
+    t = txt or ""
+    while prev != t:
+        prev = t
+        t = _RE_REPEAT.sub(lambda m: m.group(1) * 2 + "…", t)
+    return t
+
+
 def transcribe(video_path, whisper_model, max_seconds=0):
     """faster-whisper 日文转写, 返回 [(start, end, text), ...]
 
@@ -254,7 +269,9 @@ def transcribe(video_path, whisper_model, max_seconds=0):
     def _collect(segments, info):
         out, lastlog = [], time.time()
         for seg in segments:
-            txt = (seg.text or "").strip()
+            txt = _collapse_repeats((seg.text or "").strip())
+            if len(txt) > 300:
+                txt = txt[:300] + "…"
             if txt:
                 out.append((seg.start, seg.end, txt))
             # 每 30s 打一次进度(能看到是否在推进)
@@ -397,6 +414,8 @@ def _extract_json_array(text):
 
 
 _FAST_MODELS = [MODEL, MODEL_FB]
+# 坏字幕容忍阈值: 超过就不上传该组(0.02 = 2%)
+MAX_BAD_RATIO = float(os.environ.get("MAX_BAD_RATIO", "0.02"))
 _RESCUE_MODELS = [MODEL, MODEL_FB, "qwen3.7-max", "qwen3.8-max", "deepseek-v4-pro"]
 # 网关并发闸门: 高并发会大量 503/504, 所以同时最多 XLATE_CONC 个请求在飞
 _XLATE_SEM = threading.Semaphore(max(1, XLATE_CONC))
@@ -423,7 +442,12 @@ def _translate_batch(payload, models=None, attempts=2):
                         return got
                 log("翻译批(len=%d) 用 %s 返回不可解析(第%d次)" % (len(payload), model, attempt + 1))
             except Exception as e:
-                log("翻译批(len=%d) 用 %s 失败(第%d次): %s" % (len(payload), model, attempt + 1, str(e)[:100]))
+                msg = str(e)[:100]
+                log("翻译批(len=%d) 用 %s 失败(第%d次): %s" % (len(payload), model, attempt + 1, msg))
+                if "429" in msg or "Too Many Requests" in msg:
+                    # 网关限流: 长退避 + 抖动, 别跟着一起猛冲
+                    time.sleep(random.uniform(25, 45))
+                    continue
             time.sleep(min(15.0, (2 ** attempt) + random.uniform(0, 1.5)))
 
 
@@ -473,9 +497,15 @@ def _has_japanese(text):
 
 
 _LEAK_WORDS = ("the user", "i need", "i should", "let me", "translate", "translation",
-               "用户想", "用户希望", "需要翻译", "翻译成", "we need", "sure,", "当然，以下是")
+               "用户想", "用户希望", "需要翻译", "翻译成", "we need", "sure,", "当然，以下是",
+               "以下是翻", "译文如下", "作为ai", "as an ai", "i cannot", "i can't")
+# 模型拒译/合规话术(这些文案被当成"译文"写进 srt 是硬伤)
+_REFUSAL_WORDS = ("不便翻译", "无法翻译", "不能翻译", "无法提供翻译", "不宜提供",
+                  "色情内容", "露骨的内容", "违反政策", "不合规内容", "抱歉，我")
+
+
 def _is_bad_translation(text):
-    """坏译文: 含日文假名 / 泄漏思考过程 / 为空"""
+    """坏译文: 含日文假名 / 泄漏思考过程 / 拒译话术 / 为空"""
     t = (text or "").strip()
     if not t:
         return True
@@ -484,6 +514,9 @@ def _is_bad_translation(text):
     low = t.lower()
     for w in _LEAK_WORDS:
         if w in low:
+            return True
+    for w in _REFUSAL_WORDS:
+        if w in t:
             return True
     return False
 
@@ -765,6 +798,19 @@ def process_group(remote, path, base, parts, workdir, apply, probe_seconds=0, bu
         log("!! 无字幕段, 跳过")
         return
     zh = translate_segments(segs)
+    # 上传前质量门: 坏译文(日文残留/泄漏/拒译话术)超阈值就不上传
+    # —— 组没有 srt 会被当作未完成, 下轮自动重跑; 宁缺勿滥
+    bad = [t for _s, _e, t in zh if _is_bad_translation(t)]
+    ratio = (len(bad) / float(len(zh))) if zh else 1.0
+    if ratio > MAX_BAD_RATIO:
+        log("!! 组不合格: 坏译文 %d/%d (%.1f%% > %.1f%%), 不上传, 等下次重跑"
+            % (len(bad), len(zh), ratio * 100, MAX_BAD_RATIO * 100))
+        for p in local_parts + [video]:
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+        return
     # 按分片切分时间轴: 每个视频文件一个同名 srt(播放器打开视频直接挂字幕)
     pieces = split_srt_parts(zh, local_parts, [fn for _i, fn in parts], gdir)
     if not pieces:
