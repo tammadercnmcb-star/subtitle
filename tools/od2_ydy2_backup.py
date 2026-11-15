@@ -291,25 +291,71 @@ class _Progress(object):
         return time.time() - self.t0
 
 
-def alist_put(remote_path, local_file, size, label=None):
+def _put_once(remote_path, local_file, size, label, offset=0, length=None):
+    """单次流式 PUT(整文件或从 offset 起的剩余部分)"""
+    length = size - offset if length is None else length
     with open(local_file, "rb") as fh:
-        body = _Progress(fh, size, label or os.path.basename(remote_path)[:30])
-        req = urllib.request.Request(ALIST + "/api/fs/put", data=body, method="PUT",
-                                     headers={"Authorization": TOKEN,
-                                              "File-Path": urllib.parse.quote(remote_path),
-                                              "Content-Type": "application/octet-stream",
-                                              "Content-Length": str(size)})
-        d = json.loads(OP.open(req, timeout=7200).read().decode("utf-8", "replace"))
+        if offset:
+            fh.seek(offset)
+        body = _Progress(_Slice(fh, length), length, label or os.path.basename(remote_path)[:30])
+        hdrs = {"Authorization": TOKEN,
+                "File-Path": urllib.parse.quote(remote_path),
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(length)}
+        if offset:
+            # alist 支持断点续传: Content-Range + 覆盖模式
+            hdrs["Content-Range"] = "bytes %d-%d/%d" % (offset, size - 1, size)
+            hdrs["X-File-Mtime"] = str(int(os.path.getmtime(local_file)))
+        req = urllib.request.Request(ALIST + "/api/fs/put", data=body, method="PUT", headers=hdrs)
+        d = json.loads(OP.open(req, timeout=3600).read().decode("utf-8", "replace"))
     if d.get("code") != 200:
         raise RuntimeError("上传失败: %s %s" % (d.get("code"), d.get("message")))
     return body.secs
+
+
+class _Slice(object):
+    """只读前 n 字节的包装, 让 _Progress 按片计速"""
+
+    def __init__(self, fh, n):
+        self.fh, self.n = fh, n
+
+    def read(self, k=-1):
+        if self.n <= 0:
+            return b""
+        if k is None or k < 0 or k > self.n:
+            k = self.n
+        b = self.fh.read(k)
+        self.n -= len(b)
+        return b
+
+
+def alist_put(remote_path, local_file, size, label=None):
+    """上传: 先整文件试一次; 失败则按块续传(默认 64MB 一块), 每块独立重试。
+    139 个人云大文件流式 PUT 容易中途僵死, 分块续传能把'整文件重来'变成'只补失败块'。"""
+    chunk = int(os.environ.get("GY_CHUNK_MB", "64")) * 1024 * 1024
+    if size <= chunk:
+        return _put_once(remote_path, local_file, size, label)
+    off, total = 0, 0.0
+    while off < size:
+        for attempt in (1, 2, 3):
+            try:
+                total += _put_once(remote_path, local_file, size, label, offset=off)
+                break
+            except Exception as e:
+                if attempt == 3:
+                    raise
+                log("   块@%s 失败(%s), 第%d次重试" % (human(off), str(e)[:80], attempt + 1))
+                time.sleep(3 * attempt)
+        off += chunk
+        log("   已传 %s / %s" % (human(min(off, size)), human(size)))
+    return total
 
 
 # ---------------- rclone ----------------
 def _put_with_guard(remote_path, local_file, size, label=None):
     """alist_put 的守卫版: 单文件超时 + 卡死重试一次 + 仍卡死则跳过。
     139 个人云偶发上传僵死(实测 21 分钟 0 速率), 不能让整轮备份卡住。"""
-    budget = int(os.environ.get("GY_PUT_TIMEOUT_SEC", "1200"))
+    budget = int(os.environ.get("GY_PUT_TIMEOUT_SEC", "900"))
     for attempt in (1, 2):
         t0 = time.time()
         res = {"ok": False}
@@ -341,7 +387,9 @@ def rclone(args, timeout=7200):
 
 def src_list(root):
     """源端清单 -> {相对路径: 字节}"""
-    r = rclone(["lsjson", root, "-R", "--files-only", "--fast-list", "--no-modtime"], timeout=3600)
+    # 只备份顶层文件(不进子目录): --max-depth 1
+    r = rclone(["lsjson", root, "--files-only", "--fast-list", "--no-modtime",
+                "--max-depth", "1"], timeout=3600)
     if r.returncode != 0:
         raise RuntimeError("列源失败: %s" % (r.stderr or "")[:200])
     out = {}
