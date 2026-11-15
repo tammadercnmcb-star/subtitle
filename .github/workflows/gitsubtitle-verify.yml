@@ -29,6 +29,7 @@ permissions:
 
 env:
   PATHS_JSON: ${{ secrets.GITPATHS_JSON }}
+  LANG_MODE: ${{ vars.LANG_MODE || 'ja' }}
 
 jobs:
   verify:
