@@ -690,7 +690,7 @@ def main():
             with SENT_LOCK:
                 INFLIGHT[rel] = (time.time(), size)
             try:
-                els = alist_put(remote, lp, size, label=rel)
+                els = _put_with_guard(remote, lp, size, label=rel)
             finally:
                 with SENT_LOCK:
                     INFLIGHT.pop(rel, None)
