@@ -197,3 +197,17 @@ jobs:
       - name: 上传 srt 统计(可选)
         if: always()
         run: df -h / | tail -1
+
+      # 自接力(限量): 本批结束补 1 批, 避免 GitHub cron 不守时导致断流。
+      # RELAY=1 -> dispatch 每次最多补 1 批, 不会指数级联。
+      - name: 自接力补一批
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITGH_TOKEN }}
+          PATHS_JSON: ${{ secrets.GITPATHS_JSON }}
+          RELAY: "1"
+          LANG_MODE: ${{ vars.LANG_MODE || 'ja' }}
+        run: |
+          sleep $((RANDOM % 40))
+          python3 gitsubtitle_dispatch.py
