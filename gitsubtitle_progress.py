@@ -70,9 +70,20 @@ def rclone_files(remote, path):
     return [l.strip() for l in p.stdout.splitlines() if l.strip()]
 
 
+def _norm_base(base):
+    """剥掉 已处理_ 前缀(与 gitsubtitle_translate.group_files 同规则)"""
+    b = base
+    while True:
+        nb = re.sub(r"^已处理_", "", b)
+        if nb == b:
+            break
+        b = nb
+    return b
+
+
 def collect():
     files = rclone_files(SRC_REMOTE, SRC_DIR)
-    groups = set()
+    parts = {}          # base -> [原始分片文件名]
     srt = set()
     for fn in files:
         if fn.lower().endswith(".srt"):
@@ -80,7 +91,9 @@ def collect():
             continue
         m = _RE_PART.search(fn) or _RE_PLAIN.search(fn)
         if m:
-            groups.add(m.group("base"))
+            parts.setdefault(_norm_base(m.group("base")), []).append(fn)
+    # 组完成 = 每个视频分片都有同名 srt(按分片命名)
+    done = sum(1 for ps in parts.values() if all((p + ".srt") in srt for p in ps))
     burn = set()
     try:
         for fn in rclone_files(SRC_REMOTE, "%s/%s" % (SRC_DIR, BURN_DIR)):
@@ -89,11 +102,11 @@ def collect():
     except Exception as e:
         log("列字幕版失败(视为0): %s" % str(e)[:120])
     return {
-        "total_groups": len(groups),
-        "srt": len(srt),
+        "total_groups": len(parts),
+        "srt": done,               # 完成组数(每分片有同名 srt)
         "burn": len(burn),
-        "pending": len(groups - srt),
-        "srt_no_burn": len(srt - burn),   # 有srt但没硬字幕(待补烧)
+        "pending": len(parts) - done,
+        "srt_no_burn": 0,          # 烧录阶段已移除
     }
 
 
