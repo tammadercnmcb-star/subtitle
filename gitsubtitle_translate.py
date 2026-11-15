@@ -282,6 +282,8 @@ def transcribe(video_path, whisper_model, max_seconds=0):
                 lastlog = time.time()
         return out
 
+    _dur = {"v": 0.0}
+
     def _run(use_vad, vad_params=None):
         log("开始转写(日文, vad=%s, beam=%d, batch=%d, max_s=%s)..." % (
             use_vad, WHISPER_BEAM, WHISPER_BATCH, max_seconds or "full"))
@@ -298,16 +300,31 @@ def transcribe(video_path, whisper_model, max_seconds=0):
         else:
             segments, info = pipe.transcribe(video_path, batch_size=WHISPER_BATCH, **kw)
         log("检测语种=%s p=%.2f, 时长=%.1fs" % (info.language, info.language_probability, info.duration))
+        _dur["v"] = float(info.duration or 0.0)
         return _collect(segments, info)
 
+    def _coverage(segs):
+        """字幕覆盖时长占比: 太低说明 VAD 把对白滤掉了(这类片呻吟/喘息置信度低)"""
+        d = _dur["v"]
+        if not d:
+            return 0.0
+        return sum(max(0.0, en - st) for st, en, _t in segs) / d
+
     out = _run(True, VAD_TIGHT)
-    if not out and not max_seconds:
-        log("!! 紧 VAD 后无字幕, 先用放宽 VAD 重跑(比全量重跑快得多)")
-        out = _run(True, VAD_LOOSE)
-    if not out and not max_seconds:
-        log("!! 放宽 VAD 仍无字幕, 回退到无 VAD 全量转写")
-        out = _run(False)
-    log("转写完成: %d 条字幕" % len(out))
+    if not max_seconds:
+        # 覆盖不足 5% 说明紧 VAD 滤狠了 -> 放宽重跑, 取覆盖更高的一版
+        if not out or _coverage(out) < 0.05:
+            log("!! 紧 VAD 覆盖过低(%d 条, %.1f%%), 放宽 VAD 重跑" % (len(out), _coverage(out) * 100))
+            loose = _run(True, VAD_LOOSE)
+            if _coverage(loose) > _coverage(out) or len(loose) > len(out):
+                out = loose
+        # 还是太低 -> 无 VAD 全量转写(慢, 但这类素材必须)
+        if not out or _coverage(out) < 0.02:
+            log("!! 仍过低(%d 条, %.1f%%), 回退无 VAD 全量转写" % (len(out), _coverage(out) * 100))
+            novad = _run(False)
+            if len(novad) > len(out):
+                out = novad
+    log("转写完成: %d 条字幕 (覆盖 %.1f%%)" % (len(out), _coverage(out) * 100))
     return out
 
 
@@ -628,8 +645,8 @@ def ffprobe_duration(path):
 
 
 def group_srt_done(existing, parts):
-    """组完成 = 每个视频分片都有同名 .srt(按分片命名, 播放器自动挂字幕)"""
-    return all((fn + ".srt") in existing for _i, fn in parts)
+    """组完成 = 每个视频分片都有同名 .srt(<视频名去扩展名>.srt, 播放器自动挂字幕)"""
+    return all((os.path.splitext(fn)[0] + ".srt") in existing for _i, fn in parts)
 
 
 def split_srt_parts(zh, local_parts, raw_names, out_dir):
@@ -835,7 +852,9 @@ def process_group(remote, path, base, parts, workdir, apply, probe_seconds=0, bu
     else:
         ok_n = 0
         for raw, srt_path in pieces:
-            rc, out, err = run(["rclone", "copyto", srt_path, "%s:%s/%s.srt" % (remote, path, raw),
+            # 播放器要求 <视频名去掉扩展名>.srt, 所以 xxx.mp4 -> xxx.srt
+            stem = os.path.splitext(raw)[0]
+            rc, out, err = run(["rclone", "copyto", srt_path, "%s:%s/%s.srt" % (remote, path, stem),
                                 "--retries", "3"])
             if rc == 0:
                 ok_n += 1
