@@ -28,6 +28,10 @@ on:
         description: "本轮时间预算(分钟)"
         required: false
         default: "300"
+      parallel:
+        description: "并发传几个文件"
+        required: false
+        default: "4"
       only:
         description: "只处理名字含该子串的文件(调试用)"
         required: false
@@ -125,9 +129,11 @@ jobs:
           BUDGET_MIN: ${{ inputs.budget_min || '300' }}
           ONLY: ${{ inputs.only || '' }}
           ALIST_URL: "http://127.0.0.1:5244"
+          GY_CHUNK_MB: "64"
+          GY_PUT_TIMEOUT_SEC: "900"
         run: |
           ARGS="--max-files $MAX_FILES --max-total-gb $MAX_TOTAL_GB --budget-min $BUDGET_MIN"
-          ARGS="$ARGS --parallel 1"
+          ARGS="$ARGS --parallel ${{ inputs.parallel || '4' }}"
           if [ "$APPLY" = "true" ]; then ARGS="$ARGS --apply"; else echo "(演练模式)"; fi
           if [ -n "$ONLY" ]; then ARGS="$ARGS --only $ONLY"; fi
           python3 tools/od2_ydy2_backup.py $ARGS
