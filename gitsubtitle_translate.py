@@ -235,6 +235,10 @@ def concat_parts(local_parts, outpath):
 # whisper 在喘息/呻吟/重复喊叫段会循环输出同一短语("ほらほらほら…×30"),
 # 既污染字幕又让模型拒译 → 转写结果先做重复折叠。
 _RE_REPEAT = re.compile(r"(.{2,10}?)\1{4,}")
+# whisper 在静音/无语音(喘息、呻吟)段会幻觉出这些固定短语, 且往往跨几分钟
+_HALLU_PHRASES = ("おやすみなさい", "おやすみ", "ご視聴ありがとうございました", "ご視聴ありがとうございます",
+                  "ありがとうございました", "チャンネル登録", "ご清聴ありがとうございました",
+                  "おめでとうございます", "お待ちしております", "最後までご視聴")
 
 
 def _collapse_repeats(txt):
@@ -245,6 +249,45 @@ def _collapse_repeats(txt):
         prev = t
         t = _RE_REPEAT.sub(lambda m: m.group(1) * 2 + "…", t)
     return t
+
+
+def _is_hallucination(txt, dur, no_speech_prob=None):
+    """判定 whisper 幻觉/垃圾段: 无语音概率高、固定短语跨长时段、或文字密度过低"""
+    t = (txt or "").strip().strip("。、!！?？…")
+    if not t:
+        return True
+    if no_speech_prob is not None and no_speech_prob > 0.6:
+        return True
+    for h in _HALLU_PHRASES:
+        if h in t and dur > 5.0 and len(t) <= len(h) + 8:
+            return True
+    # 文字密度过低: 正常日语语速 ~5 字/秒; 长跨度只有零星几个字 = whisper 把静音段糊成一条
+    if dur > 15.0 and (len(t) / max(1.0, dur)) < 0.15:
+        return True
+    return False
+
+
+def _split_long_seg(st, en, txt, max_sec=7.0):
+    """长段切成 <=max_sec 的可读字幕条(优先按标点, 否则按字数均分, 每条>=4字)"""
+    d = en - st
+    txt = txt or ""
+    if d <= max_sec or not txt.strip():
+        return [(st, en, txt)]
+    n_chars = max(1, int(len(txt) / 4.0))
+    n = min(n_chars, 12, max(1, int(d / max_sec + 0.999)))
+    pieces = [p for p in re.split(r"(?<=[。！？!?…])", txt) if p.strip()]
+    if len(pieces) < 2 or len(pieces) > n * 2:
+        avg = max(4, int(len(txt) / float(n) + 0.999))
+        pieces = [txt[i:i + avg] for i in range(0, len(txt), avg) if txt[i:i + avg].strip()]
+    if not pieces:
+        return [(st, en, txt)]
+    total = sum(len(p) for p in pieces) or 1
+    out, cur = [], st
+    for p in pieces:
+        span = d * (len(p) / float(total))
+        out.append((cur, min(en, cur + span), p.strip()))
+        cur += span
+    return [(a, b, t) for a, b, t in out if t]
 
 
 def transcribe(video_path, whisper_model, max_seconds=0):
@@ -270,16 +313,26 @@ def transcribe(video_path, whisper_model, max_seconds=0):
 
     def _collect(segments, info):
         out, lastlog = [], time.time()
+        dropped = 0
         for seg in segments:
-            txt = _collapse_repeats((seg.text or "").strip())
-            if len(txt) > 300:
-                txt = txt[:300] + "…"
-            if txt:
-                out.append((seg.start, seg.end, txt))
+            nsp = getattr(seg, "no_speech_prob", None)
+            raw = (seg.text or "").strip()
+            if _is_hallucination(raw, max(0.0, seg.end - seg.start), nsp):
+                dropped += 1
+                continue
+            txt = _collapse_repeats(raw)
+            for st2, en2, tx in _split_long_seg(seg.start, seg.end, txt):
+                if len(tx) > 300:
+                    tx = tx[:300] + "…"
+                if tx:
+                    out.append((st2, en2, tx))
             # 每 30s 打一次进度(能看到是否在推进)
             if time.time() - lastlog > 30:
-                log("  转写进度: 已到 %.0fs / 共 %.0fs, 已收 %d 条" % (seg.end, info.duration, len(out)))
+                log("  转写进度: 已到 %.0fs / 共 %.0fs, 已收 %d 条(丢幻觉 %d)" % (
+                    seg.end, info.duration, len(out), dropped))
                 lastlog = time.time()
+        if dropped:
+            log("  幻觉段丢弃: %d 条(静音/无语音)" % dropped)
         return out
 
     _dur = {"v": 0.0}
@@ -312,18 +365,12 @@ def transcribe(video_path, whisper_model, max_seconds=0):
 
     out = _run(True, VAD_TIGHT)
     if not max_seconds:
-        # 覆盖不足 5% 说明紧 VAD 滤狠了 -> 放宽重跑, 取覆盖更高的一版
+        # 覆盖不足 5% 说明紧 VAD 滤狠了 -> 放宽一档再比(不再无 VAD 全量: 那是幻觉温床)
         if not out or _coverage(out) < 0.05:
             log("!! 紧 VAD 覆盖过低(%d 条, %.1f%%), 放宽 VAD 重跑" % (len(out), _coverage(out) * 100))
             loose = _run(True, VAD_LOOSE)
-            if _coverage(loose) > _coverage(out) or len(loose) > len(out):
+            if _coverage(loose) > _coverage(out):
                 out = loose
-        # 还是太低 -> 无 VAD 全量转写(慢, 但这类素材必须)
-        if not out or _coverage(out) < 0.02:
-            log("!! 仍过低(%d 条, %.1f%%), 回退无 VAD 全量转写" % (len(out), _coverage(out) * 100))
-            novad = _run(False)
-            if len(novad) > len(out):
-                out = novad
     log("转写完成: %d 条字幕 (覆盖 %.1f%%)" % (len(out), _coverage(out) * 100))
     return out
 
@@ -852,6 +899,13 @@ def process_group(remote, path, base, parts, workdir, apply, probe_seconds=0, bu
     else:
         ok_n = 0
         for raw, srt_path in pieces:
+            # 空字幕不上传(该分片算未完成, 下轮重试), 避免 0 字节垃圾文件
+            try:
+                if os.path.getsize(srt_path) < 12:
+                    log("空字幕跳过: %s" % raw)
+                    continue
+            except Exception:
+                continue
             # 播放器要求 <视频名去掉扩展名>.srt, 所以 xxx.mp4 -> xxx.srt
             stem = os.path.splitext(raw)[0]
             rc, out, err = run(["rclone", "copyto", srt_path, "%s:%s/%s.srt" % (remote, path, stem),
