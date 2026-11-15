@@ -218,10 +218,10 @@ def main():
 
 
 if __name__ == "__main__":
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-try:
-    import gitlogmask as logmask
-    logmask.install()
-except Exception:
-    pass
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    try:
+        import gitlogmask as logmask   # 日志脱敏
+        logmask.install()
+    except Exception:
+        pass
     sys.exit(main())
