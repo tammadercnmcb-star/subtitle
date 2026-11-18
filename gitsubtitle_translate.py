@@ -693,7 +693,7 @@ def ffprobe_duration(path):
 
 def group_srt_done(existing, parts):
     """组完成 = 每个视频分片都有同名 .srt(<视频名去扩展名>.srt, 播放器自动挂字幕)"""
-    return all((os.path.splitext(fn)[0] + ".srt") in existing for _i, fn in parts)
+    return all(os.path.splitext(fn)[0] in existing for _i, fn in parts)   # existing 存的是无扩展名名, 别再加 .srt
 
 
 def split_srt_parts(zh, local_parts, raw_names, out_dir):
