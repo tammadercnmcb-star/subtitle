@@ -94,7 +94,7 @@ def collect():
             parts.setdefault(_norm_base(m.group("base")), []).append(fn)
     # 组完成 = 每个视频分片都有同名 srt(<视频名去扩展名>.srt)
     done = sum(1 for ps in parts.values()
-               if all((os.path.splitext(p)[0] + ".srt") in srt for p in ps))
+               if all(os.path.splitext(p)[0] in srt for p in ps))   # srt 集合存的是无扩展名名
     burn = set()
     try:
         for fn in rclone_files(SRC_REMOTE, "%s/%s" % (SRC_DIR, BURN_DIR)):
