@@ -132,6 +132,15 @@ jobs:
           test -s ~/.config/rclone/rclone.conf && echo "rclone 配置已写入"
           grep -E '^\[' ~/.config/rclone/rclone.conf | sed 's/$/: <masked>/'
 
+
+      - name: 追加 ydy2(139 个人云) WebDAV 远端
+        env:
+          YDY_DAV_TOKEN: ${{ secrets.YDY_DAV_TOKEN }}
+        run: |
+          printf '\n[ydy2]\ntype = webdav\nurl = https://abcd.tammader.de5.net/dav/ydy2\nvendor = other\nbearer_token = %s\n' "$YDY_DAV_TOKEN" >> ~/.config/rclone/rclone.conf
+          rclone listremotes
+          rclone lsd ydy2: --max-depth 1 | head -5
+
       - name: 装 Python 3.11
         uses: actions/setup-python@v5
         with:
