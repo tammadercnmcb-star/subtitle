@@ -73,6 +73,8 @@ def resolve_whisper_model(name):
 WHISPER_THREADS = int(os.environ.get("WHISPER_THREADS", "4"))
 WHISPER_BATCH = int(os.environ.get("WHISPER_BATCH", "8"))  # 批量推理批大小(BatchedInferencePipeline)
 WHISPER_BEAM = int(os.environ.get("WHISPER_BEAM", "1"))    # 1=贪心, 最快
+# 组质量门: 空字幕条数占比超过该阈值就不上传(该组算未完成, 下轮重试), 防 0 字节/半截 srt
+MAX_BAD_RATIO = float(os.environ.get("MAX_BAD_RATIO", "0.02"))
 
 # 分片命名: [已处理_]<base>.partNNN[_D].mp4  ；<base> 可能含中文/番号/空格
 _RE_PART = re.compile(r"(?:^|_)(?P<base>.+?)\.part(?P<idx>\d+)(?:_[A-Za-z])?\.(?P<ext>mp4|mkv|avi|wmv|mov|flv|m4v|rmvb|ts|mpg|mpeg|webm|3gp)$", re.I)
