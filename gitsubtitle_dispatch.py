@@ -98,12 +98,8 @@ def main():
             try:
                 created = time.mktime(time.strptime(recent[0]["created_at"], "%Y-%m-%dT%H:%M:%SZ"))
                 if time.time() - created < 6 * 3600:
-                    if PHASE == "burn":
-                        log("🎬 硬字幕烧录全部完成! 总组 %d | 字幕 %d | 硬字幕 %d" % (
-                            stats["total_groups"], stats["srt"], stats["burn"]))
-                    else:
-                        log("📝 字幕翻译全部完成(待烧录 %d 组)! 总组 %d | 字幕 %d | 硬字幕 %d" % (
-                            stats["srt_no_burn"], stats["total_groups"], stats["srt"], stats["burn"]))
+                    log("🎉 日文字幕全部完成! 总组 %d | 已出字幕 %d" % (
+                        stats["total_groups"], stats["srt"]))
                     log("已发完成通知")
             except Exception:
                 pass
@@ -121,11 +117,7 @@ def main():
         si = (base + i) * GROUPS_PER_RUN    # 0,3,6,9... 不重叠(旧写法 i%N 会让相邻批次重叠 2 组)
         inputs = {"apply": "true", "limit_groups": str(GROUPS_PER_RUN), "budget_min": "340",
                   "whisper_model": "large-v3", "start_index": str(si),
-                  "batch_tag": "%s_%d_%d" % (PHASE, bt, i),
-                  # 翻译阶段只出 srt; 烧录阶段只烧已有 srt
-                  "burn_video": "false"}
-        if PHASE == "burn":
-            inputs["burn_only"] = "true"
+                  "batch_tag": "%s_%d_%d" % (PHASE, bt, i)}
         st, dd = gh_req("POST", "/repos/%s/actions/workflows/%s/dispatches" % (REPO, WF), tok,
                         {"ref": "main", "inputs": inputs})
         if st in (204, 200, 201):

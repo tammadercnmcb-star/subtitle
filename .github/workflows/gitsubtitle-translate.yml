@@ -1,13 +1,13 @@
 name: subtitle-translate
 
-# 日文语音视频 → 中文 SRT 字幕(纯云端)
-#   分片按「番号」归组 → ffmpeg 拼整片 → faster-whisper(large-v3) 日文转写
-#   → OpenAI 兼容网关批量翻译(简体中文, 保时间轴) → 同名 .srt 上传回源目录
+# 日文语音视频 → 日文 SRT 字幕(纯云端, 只做 ASR: 不翻译、不调 LLM、不烧录)
+#   分片按「番号」归组 → ffmpeg 拼整片 → faster-whisper 日文转写
+#   → 按分片切时间轴, 每个视频文件出同名 .srt 上传回源目录
 #
 # 公开仓库: 日志全部脱敏(logmask), 真实盘名/目录名/番号/链接均不出现明文。
-# Secrets: RCLONE_CONF(含源远端) / PATHS_JSON(SUB_SRC/SUB_DIR/_WORDS) /
-#          SUBTITLE_API_BASE / SUBTITLE_API_KEY / SUBTITLE_MODEL / SUBTITLE_MODEL_FB /
-#          TRANSLATE_RULES(翻译附加规则, 可选) / TRANSLATE_TERMS(术语对照 JSON 文本, 可选)
+# Secrets: GITRCLONE_CONF(含源远端) / GITPATHS_JSON(SUB_SRC/SUB_DIR) / YDY_DAV_TOKEN
+# 2026-11-21: 中译链路 / 硬字幕烧制 / 修复模式 已从脚本整体删除;
+#             SUBTITLE_API_* / SUBTITLE_MODEL* / BURN_* / LANG_MODE 全部不再注入。
 
 on:
   # 兜底定时(每 2 小时): 主调度走 subtitle-dispatch(每 10 分钟补满并行)。
@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       apply:
-        description: "true=真跑(转写+翻译+上传), false=只列分组统计"
+        description: "true=真跑(转写+上传 srt), false=只列分组统计"
         required: false
         default: "false"
       only:
@@ -50,30 +50,10 @@ on:
         description: "从待处理列表第 K 个开始(并行分批); 配合 limit_groups 划分区间"
         required: false
         default: "0"
-      burn_video:
-        description: "烧录已移除(固定 false); true 仅应急手用"
-        required: false
-        default: "false"
       force:
         description: "配合 only: 即使已有 srt 也强制重跑(测试用, 慎用)"
         required: false
         default: "false"
-      burn_only:
-        description: "补烧模式: 对有 srt 但缺字幕版视频的组只拼片+烧制(不重跑转写)"
-        required: false
-        default: "false"
-      fix_srt:
-        description: "修复模式: 重译已有 srt 的日文残留, 写回并重烧硬字幕"
-        required: false
-        default: "false"
-      no_reburn:
-        description: "配合 fix_srt: 只修 srt 不重烧视频"
-        required: false
-        default: "false"
-      extra_rules:
-        description: "翻译附加规则(自然语言, 可多行): 如术语对照/人名保留/语气要求; 留空=用默认规则"
-        required: false
-        default: ""
 
 concurrency:
   # 按 batch_tag 唯一, 允许多批并行跑不同组(不会互相取消); cancel-in-progress 仍关
@@ -85,20 +65,10 @@ permissions:
 
 env:
   PATHS_JSON: ${{ secrets.GITPATHS_JSON }}
-  LANG_MODE: ${{ vars.LANG_MODE || 'ja' }}
-  SUBTITLE_API_BASE: ${{ secrets.GITSUBTITLE_API_BASE }}
-  SUBTITLE_API_KEY: ${{ secrets.GITSUBTITLE_API_KEY }}
-  SUBTITLE_MODEL: ${{ secrets.GITSUBTITLE_MODEL }}
-  SUBTITLE_MODEL_FB: ${{ secrets.GITSUBTITLE_MODEL_FB }}
-  # 速度旋钮(仓库 Variables 可改, 不改代码即可调优)
-  BATCH_SIZE: ${{ vars.BATCH_SIZE || '50' }}          # 每请求字幕条数(旧: 10)
-  XLATE_CONC: ${{ vars.XLATE_CONC || '4' }}           # 并发翻译请求数(旧: 1, 串行)
+  # --- 纯日文识别: 无 LLM / 无烧录, 只剩 whisper 本地推理旋钮 ---
   WHISPER_THREADS: ${{ vars.WHISPER_THREADS || '4' }}
   WHISPER_BATCH: ${{ vars.WHISPER_BATCH || '8' }}     # 批量推理批大小(旧: 无)
-  WHISPER_BEAM: ${{ vars.WHISPER_BEAM || '1' }}       # 旧: 5
-  BURN_PRESET: ${{ vars.BURN_PRESET || 'ultrafast' }} # 旧: veryfast
-  BURN_CRF: ${{ vars.BURN_CRF || '23' }}              # 旧: 22
-  BURN_MODE: ${{ vars.BURN_MODE || 'hard' }}          # hard=烧进画面 / soft=软字幕
+  WHISPER_BEAM: ${{ vars.WHISPER_BEAM || '1' }}       # 1=贪心最快, 5=束搜索更准
 
 jobs:
   translate:
@@ -108,13 +78,37 @@ jobs:
       - name: 取仓库
         uses: actions/checkout@v4
 
-      - name: 装系统依赖(ffmpeg + 中文字体)
+      - name: 装 ffmpeg
+        # 不走 apt(20 个 job 同时 apt-get 会互相拖); 镜像自带就跳过
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fonts-noto-cjk
+          set -euo pipefail
+          if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+            echo "镜像自带 ffmpeg, 跳过安装"
+            ffmpeg -version | head -1
+            exit 0
+          fi
+          echo "镜像里没有 ffmpeg, 先试 BtbN 的 GitHub 静态构建"
+          ok=0
+          if curl -fsSL --retry 3 --retry-delay 3 --retry-all-errors \
+               -o /tmp/ff.tar.xz \
+               https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz \
+             && sudo mkdir -p /opt/ff \
+             && sudo tar -xJf /tmp/ff.tar.xz -C /opt/ff --strip-components=1; then
+            ff=$(sudo find /opt/ff -type f -name ffmpeg | head -1)
+            fp=$(sudo find /opt/ff -type f -name ffprobe | head -1)
+            if [ -n "$ff" ] && [ -n "$fp" ]; then
+              sudo ln -sf "$ff" /usr/local/bin/ffmpeg
+              sudo ln -sf "$fp" /usr/local/bin/ffprobe
+              ok=1
+            fi
+          fi
+          if [ "$ok" != "1" ]; then
+            echo "静态包也没成, 退回 apt"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          fi
           ffmpeg -version | head -1
-          fc-list | grep -i "noto sans cjk" | head -2 || echo "(中文字体检查)"
-          df -h / | tail -1
+          ffprobe -version | head -1
 
       - name: 装 rclone
         run: |
@@ -131,7 +125,6 @@ jobs:
           printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
           test -s ~/.config/rclone/rclone.conf && echo "rclone 配置已写入"
           grep -E '^\[' ~/.config/rclone/rclone.conf | sed 's/$/: <masked>/'
-
 
       - name: 追加 ydy2(139 个人云) WebDAV 远端
         env:
@@ -164,7 +157,7 @@ jobs:
           python3 -m pip install --quiet "av==18.1.0" "ctranslate2==4.8.5" "faster-whisper==1.2.1"
           python3 -c "import faster_whisper, av, ctranslate2; print('fw', faster_whisper.__version__, '| av', av.__version__, '| ct2', ctranslate2.__version__)"
 
-      - name: 跑字幕流水线
+      - name: 跑字幕流水线(只出日文 srt)
         env:
           EVENT_NAME: ${{ github.event_name }}
           APPLY: ${{ inputs.apply || 'false' }}
@@ -174,49 +167,36 @@ jobs:
           WHISPER_MODEL: ${{ inputs.whisper_model || 'large-v3' }}
           PROBE_ONLY: ${{ inputs.probe_only || '0' }}
           START_INDEX: ${{ inputs.start_index || '0' }}
-          BURN_VIDEO: ${{ inputs.burn_video || 'false' }}
           FORCE: ${{ inputs.force || 'false' }}
-          BURN_ONLY: ${{ inputs.burn_only || 'false' }}
-          FIX_SRT: ${{ inputs.fix_srt || 'false' }}
-          NO_REBURN: ${{ inputs.no_reburn || 'false' }}
-          # 翻译附加规则: 优先手动输入, 否则用 Secret TRANSLATE_RULES(长期定制, 不进日志)
-          EXTRA_RULES: ${{ inputs.extra_rules || secrets.GITTRANSLATE_RULES || '' }}
-          # 术语对照表(JSON 文本): 走 Secret, 不落公开仓库
-          TRANSLATE_TERMS: ${{ secrets.GITTRANSLATE_TERMS || '' }}
         run: |
           set -e
-          # 定时触发(schedule)没有 inputs: 强制真跑一批(1组, large-v3, 硬字幕)
+          # 定时触发(schedule)没有 inputs: 强制真跑一批
           if [ "$EVENT_NAME" = "schedule" ]; then
-            APPLY="true"; LIMIT_GROUPS="3"; WHISPER_MODEL="large-v3"; START_INDEX="0"
-            BURN_VIDEO="false"; ONLY=""
-            echo "(定时触发: 处理3组 large-v3+硬字幕)"
+            APPLY="true"; LIMIT_GROUPS="3"; START_INDEX="0"; ONLY=""
+            echo "(定时触发: 处理 3 组日文转写)"
           fi
-          # BURN_VIDEO=true -> 脚本内 BURN_VIDEO 环境变量生效烧制硬字幕
-          export BURN_VIDEO="$BURN_VIDEO"
           ARGS="--limit-groups $LIMIT_GROUPS --budget-min $BUDGET_MIN --start-index $START_INDEX"
           if [ -n "$ONLY" ]; then ARGS="$ARGS --only $ONLY"; fi
           if [ "$APPLY" = "true" ]; then ARGS="$ARGS --apply"; fi
           if [ "$PROBE_ONLY" != "0" ]; then ARGS="$ARGS --probe-only $PROBE_ONLY"; fi
           if [ "$FORCE" = "true" ]; then ARGS="$ARGS --force"; fi
-          if [ "$BURN_ONLY" = "true" ]; then ARGS="$ARGS --burn-only"; fi
-          if [ "$FIX_SRT" = "true" ]; then ARGS="$ARGS --fix-srt"; fi
-          if [ "$NO_REBURN" = "true" ]; then ARGS="$ARGS --no-reburn"; fi
           python3 gitsubtitle_translate.py $ARGS
 
-      - name: 上传 srt 统计(可选)
+      - name: 磁盘余量
         if: always()
         run: df -h / | tail -1
 
       # 自接力(限量): 本批结束补 1 批, 避免 GitHub cron 不守时导致断流。
       # RELAY=1 -> dispatch 每次最多补 1 批, 不会指数级联。
+      # !cancelled(): 被取消的 run 不许再自接力(2026-11-18 实测: 取消 20 批 -> 瞬间多出 ~50 批重复)
+      # 探针模式(probe_only)也不接力, 否则一次验证会顺带放出一批全量。
       - name: 自接力补一批
-        if: always()
+        if: ${{ !cancelled() && (inputs.probe_only || '0') == '0' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITGH_TOKEN }}
           PATHS_JSON: ${{ secrets.GITPATHS_JSON }}
           RELAY: "1"
-          LANG_MODE: ${{ vars.LANG_MODE || 'ja' }}
         run: |
           sleep $((RANDOM % 40))
           python3 gitsubtitle_dispatch.py

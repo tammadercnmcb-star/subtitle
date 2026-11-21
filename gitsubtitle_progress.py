@@ -30,7 +30,6 @@ logmask.install()
 
 SRC_REMOTE = os.environ.get("SUB_SRC") or pathcfg.get("SUB_SRC", "")
 SRC_DIR = os.environ.get("SUB_DIR") or pathcfg.get("SUB_DIR", "out4")
-BURN_DIR = os.environ.get("BURN_DIR", "字幕版")
 TG = "https://api.telegram.org"
 
 _RE_PART = re.compile(r"(?:^|_)(?P<base>.+?)\.part(?P<idx>\d+)(?:_[A-Za-z])?\.(mp4|mkv|avi|wmv|mov|flv|m4v|rmvb|ts|mpg|mpeg|webm|3gp)$", re.I)
@@ -96,12 +95,6 @@ def collect():
     done = sum(1 for ps in parts.values()
                if all(os.path.splitext(p)[0] in srt for p in ps))   # srt 集合存的是无扩展名名
     burn = set()
-    try:
-        for fn in rclone_files(SRC_REMOTE, "%s/%s" % (SRC_DIR, BURN_DIR)):
-            if fn.lower().endswith(".mp4") and fn.endswith("_字幕版.mp4"):
-                burn.add(fn[:-len("_字幕版.mp4")])
-    except Exception as e:
-        log("列字幕版失败(视为0): %s" % str(e)[:120])
     return {
         "total_groups": len(parts),
         "srt": done,               # 完成组数(每分片有同名 srt)
